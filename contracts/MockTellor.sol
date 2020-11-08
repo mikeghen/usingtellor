@@ -54,40 +54,31 @@ library SafeMath {
     }
 }
 
-contract MockTellor {
+contract MockTellor is ERC20 {
 
     using SafeMath for uint256;
     event Transfer(address indexed _from, address indexed _to, uint256 _value);//ERC20 Transfer Event
-    
+
+    struct StakerInfo {
+      uint state;
+      uint unstakedRequestAt;
+    }
+
     mapping(uint256 => mapping(uint256 => uint256)) public values; //requestId -> timestamp -> value
     mapping(uint256 => mapping(uint256 => bool)) public isDisputed; //requestId -> timestamp -> value
     mapping(uint256 => uint256[]) public timestamps;
     mapping(address => uint) public balances;
-    uint256 public totalSupply;
+    mapping(address => StakerInfo) public stakers;
 
-    constructor(address[] memory _initialBalances, uint256[] memory _intialAmounts) public {
+    constructor(address[] memory _initialBalances, uint256[] memory _intialAmounts) ERC20("Tellor", "TRB") public {
         require(_initialBalances.length == _intialAmounts.length, "Arrays have different lengths");
-        for(uint i = 0; i < _intialAmounts.length; i++){
-            balances[_initialBalances[i]] = _intialAmounts[i];
-            totalSupply = totalSupply.add(_intialAmounts[i]);
+        for(uint i = 0; i < _intialAmounts.length; i++) {
+            _mint(_initialBalances[i], _intialAmounts[i]);
         }
     }
 
     function mint(address _holder, uint256 _value) public {
-        balances[_holder] = balances[_holder].add(_value);
-        totalSupply = totalSupply.add(_value);
-    }
-
-    function transfer(address _to, uint256 _amount) public returns(bool) {
-        return transferFrom(msg.sender, _to, _amount);
-    }
-
-    function transferFrom(address _from, address _to, uint256 _amount) public returns(bool){
-        require(_amount != 0, "Tried to send non-positive amount");
-        require(_to != address(0), "Receiver is 0 address");
-        balances[_from] = balances[_from].sub(_amount);
-        balances[_to] = balances[_to].add(_amount);
-        emit Transfer(_from, _to, _amount);
+        _mint(_holder, _value);
     }
 
     function submitValue(uint256 _requestId,uint256 _value) external {
@@ -114,7 +105,29 @@ contract MockTellor {
 
     function getTimestampbyRequestIDandIndex(uint256 _requestId, uint256 index) public view returns(uint256) {
         uint len = timestamps[_requestId].length;
-        if(len == 0 || len <= index) return 0; 
+        if(len == 0 || len <= index) return 0;
         return timestamps[_requestId][index];
+    }
+
+    function depositStake() external {
+      require(stakers[msg.sender].state == 0 || stakers[msg.sender].state == 2, "ALREADY STAKED");
+      require(balanceOf(msg.sender) >= 500 * 1e18, "NOT ENOUGH TO STAKE");
+      stakers[msg.sender].state = 1;
+    }
+
+    function requestStakingWithdraw() external {
+      require(stakers[msg.sender].state == 1, "NOT STAKED");
+      stakers[msg.sender].state = 2;
+      stakers[msg.sender].unstakedRequestAt = now;
+    }
+
+    function submitMiningSolution(string calldata _nonce, uint256 _requestId, uint256 _value) external {
+      require(stakers[msg.sender].state == 1, "MUST BE STAKED");
+      _mint(msg.sender, 1e18);
+    }
+
+    function withdrawStake() external {
+      require(stakers[msg.sender].state == 2 && stakers[msg.sender].unstakedRequestAt < now - 7 days, "CAN NOT WITHDRAW YET");
+      stakers[msg.sender].state = 0;
     }
 }
